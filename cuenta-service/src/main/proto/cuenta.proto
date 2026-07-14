@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package com.smartsoft.cuenta.grpc;
+
+option java_package = "com.smartsoft.cuenta.grpc";
+option java_multiple_files = true;
+
+// Contrato gRPC compartido entre persona-service (cliente) y cuenta-service (servidor).
+service CuentaGrpcService {
+  rpc crearCuenta (CuentaRequest) returns (CuentaResponse);
+}
+
+message CuentaRequest {
+  string numeroIdentificacion = 1;
+  string nombreCompleto = 2;
+}
+
+message CuentaResponse {
+  bool exito = 1;
+  string mensaje = 2;
+  string numeroCuenta = 3;
+}

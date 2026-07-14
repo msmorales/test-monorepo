@@ -1,0 +1,187 @@
+# ============================================================================
+# Despliegue de persona-service + cuenta-service en el MISMO pod de OpenShift.
+# Los dos contenedores comparten namespace de red -> se hablan por localhost.
+# cuenta-service NO se expone fuera del pod (solo persona-service via Route).
+#
+# Uso:
+#   oc apply -f persona-cuenta.yaml
+#   (luego construir/subir las imagenes, ver instrucciones al final del chat)
+# ============================================================================
+
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: persona-service
+  labels:
+    app: persona-cuenta
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: cuenta-service
+  labels:
+    app: persona-cuenta
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: persona-service
+  labels:
+    app: persona-cuenta
+spec:
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: src/main/docker/Dockerfile.jvm
+  output:
+    to:
+      kind: ImageStreamTag
+      name: persona-service:latest
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: cuenta-service
+  labels:
+    app: persona-cuenta
+spec:
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: src/main/docker/Dockerfile.jvm
+  output:
+    to:
+      kind: ImageStreamTag
+      name: cuenta-service:latest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: persona-cuenta
+  labels:
+    app: persona-cuenta
+  annotations:
+    # Redespliega automaticamente cuando se genera una nueva imagen en el ImageStream
+    image.openshift.io/triggers: >-
+      [
+        {"from":{"kind":"ImageStreamTag","name":"persona-service:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"persona-service\")].image"},
+        {"from":{"kind":"ImageStreamTag","name":"cuenta-service:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"cuenta-service\")].image"}
+      ]
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: persona-cuenta
+  template:
+    metadata:
+      labels:
+        app: persona-cuenta
+    spec:
+      containers:
+        # ---- Contenedor 1: cuenta-service (interno, solo gRPC) ----
+        - name: cuenta-service
+          image: cuenta-service:latest
+          ports:
+            - name: http-cuenta
+              containerPort: 8081
+            - name: grpc-cuenta
+              containerPort: 9000
+          env:
+            - name: QUARKUS_HTTP_PORT
+              value: "8081"
+            - name: QUARKUS_GRPC_SERVER_PORT
+              value: "9000"
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+        # ---- Contenedor 2: persona-service (expuesto via Route) ----
+        - name: persona-service
+          image: persona-service:latest
+          ports:
+            - name: http-persona
+              containerPort: 8080
+          env:
+            - name: QUARKUS_HTTP_PORT
+              value: "8080"
+            # Mismo pod -> cuenta-service se alcanza por localhost, no por DNS de servicio.
+            - name: CUENTA_GRPC_HOST
+              value: "localhost"
+            - name: CUENTA_GRPC_PORT
+              value: "9000"
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: persona-service
+  labels:
+    app: persona-cuenta
+spec:
+  selector:
+    app: persona-cuenta
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http-persona
+  type: ClusterIP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: persona-service
+  labels:
+    app: persona-cuenta
+spec:
+  to:
+    kind: Service
+    name: persona-service
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
