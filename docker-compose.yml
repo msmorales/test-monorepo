@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  cuenta-service:
+    build:
+      context: ./cuenta-service
+      dockerfile: src/main/docker/Dockerfile.jvm
+    container_name: cuenta-service
+    ports:
+      - "8081:8081"   # health checks (http://localhost:8081/q/health)
+      - "9000:9000"   # grpc (opcional exponerlo al host, solo para pruebas con grpcurl)
+    networks:
+      - persona-cuenta-net
+
+  persona-service:
+    build:
+      context: ./persona-service
+      dockerfile: src/main/docker/Dockerfile.jvm
+    container_name: persona-service
+    environment:
+      CUENTA_GRPC_HOST: cuenta-service
+      CUENTA_GRPC_PORT: "9000"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - cuenta-service
+    networks:
+      - persona-cuenta-net
+
+networks:
+  persona-cuenta-net:
+    driver: bridge
