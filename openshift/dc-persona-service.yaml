@@ -1,0 +1,107 @@
+# DeploymentConfig (recurso nativo de OpenShift, distinto del Deployment
+# generico de Kubernetes): define el/los contenedores del pod, su politica
+# de despliegue (Rolling) y los triggers de redeploy automatico.
+#
+# Aqui viven los DOS contenedores (persona-service + cuenta-service) porque
+# van en el MISMO pod (patron sidecar): cuenta-service es interno y solo se
+# alcanza por localhost desde persona-service.
+#
+# Requiere que existan los ImageStreams "persona-service" y "cuenta-service"
+# (oc new-build / BuildConfig, o que tu pipeline externo empuje la imagen
+# y actualice el ImageStreamTag). Si tu CI/CD ya resuelve esto distinto,
+# reemplaza los "from.kind: ImageStreamTag" por la referencia de imagen final.
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: persona-service
+  labels:
+    app: persona-cuenta
+spec:
+  replicas: 1
+  selector:
+    app: persona-cuenta
+  strategy:
+    type: Rolling
+  template:
+    metadata:
+      labels:
+        app: persona-cuenta
+    spec:
+      containers:
+        # ---- Sidecar: gRPC, interno, no se expone fuera del pod ----
+        - name: cuenta-service
+          image: cuenta-service:latest
+          ports:
+            - name: http-cuenta
+              containerPort: 8081
+            - name: grpc-cuenta
+              containerPort: 9000
+          envFrom:
+            - configMapRef:
+                name: cuenta-service-config
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+        # ---- Contenedor principal: REST, expuesto via Route/Service ----
+        - name: persona-service
+          image: persona-service:latest
+          ports:
+            - name: http-persona
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: persona-service-config
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+  triggers:
+    - type: ConfigChange
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+          - persona-service
+        from:
+          kind: ImageStreamTag
+          name: persona-service:latest
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+          - cuenta-service
+        from:
+          kind: ImageStreamTag
+          name: cuenta-service:latest

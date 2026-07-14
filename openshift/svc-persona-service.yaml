@@ -1,0 +1,18 @@
+# Service: nombre/IP interna estable para llegar a los pods que tengan
+# la etiqueta app=persona-cuenta. Solo se expone persona-service (8080);
+# cuenta-service no necesita Service propio porque es interno al pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: persona-service
+  labels:
+    app: persona-cuenta
+    component: persona-service
+spec:
+  selector:
+    app: persona-cuenta
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http-persona
+  type: ClusterIP

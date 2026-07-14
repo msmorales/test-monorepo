@@ -1,0 +1,20 @@
+# Route: expone el Service persona-service fuera del cluster con una URL
+# publica (https://persona-service-<proyecto>.apps.<cluster>.com). Es el
+# equivalente OpenShift a un Ingress. cuenta-service NO tiene Route: no debe
+# ser alcanzable desde fuera del pod.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: persona-service
+  labels:
+    app: persona-cuenta
+    component: persona-service
+spec:
+  to:
+    kind: Service
+    name: persona-service
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

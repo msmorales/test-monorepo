@@ -1,0 +1,15 @@
+# ConfigMap: configuracion NO sensible del contenedor persona-service.
+# Se inyecta como variables de entorno via envFrom en el DeploymentConfig.
+# No pongas aqui contraseñas ni secretos: eso va en un Secret (oc create secret).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: persona-service-config
+  labels:
+    app: persona-cuenta
+    component: persona-service
+data:
+  QUARKUS_HTTP_PORT: "8080"
+  # Mismo pod que cuenta-service -> se alcanza por localhost, no por DNS de servicio.
+  CUENTA_GRPC_HOST: "localhost"
+  CUENTA_GRPC_PORT: "9000"
